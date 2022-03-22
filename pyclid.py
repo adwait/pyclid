@@ -198,7 +198,8 @@ class UclidContext():
         return acc
 
 
-setContext = UclidContext.setContext
+setContext  = UclidContext.setContext
+clearAll    = UclidContext.clearAll
 
 
 class UclidElement():
