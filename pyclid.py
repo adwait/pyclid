@@ -941,15 +941,15 @@ class UclidBooleanVar(UclidVar):
         logging.error("Addition not supported on Boolean type")
         # return super().__add__(other)
 
-
 class UclidComment(UclidElement):
-    def __init__(self, text: str) -> None:
+    def __init__(self, text) -> None:
         super().__init__()
-        self.text = text
-
+        if isinstance(text, str):
+            self.text = text
+        else:
+            self.text = text.__inject__()
     def __inject__(self):
-        return "\t//{}\n".format(self.text)
-
+        return "/*\n{}\n*/".format(self.text)
 
 class UclidStmt(UclidElement):
     """
