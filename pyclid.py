@@ -882,9 +882,9 @@ class UclidVar(UclidLiteral):
             if isinstance(self.typ.elemtype, UclidBVType) and isinstance(self.typ.indextype, UclidBVType):
                 return VReg(prefix+self.name, self.typ.elemtype.width, pow(2, self.typ.indextype.width))
             else:
-                logging.error("Verilog generation for non-compatible type")
+                logging.error("Verilog generation for non-compatible type: {}".format(self.typ.declstring))
         else:
-            logging.error("Verilog generation for non-compatible type")
+            logging.error("Verilog generation for non-compatible type: {}".format(self.typ.declstring))
 def mkVar(varname : list, typ, porttype):
     return UclidVar(varname, typ, porttype)
 def mkVars(varnames : list, typ, porttype):
