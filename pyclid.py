@@ -855,8 +855,9 @@ class UclidBooleanConst(UclidLiteral):
         super().__init__(str(val).lower())
 class UclidBVConst(UclidLiteral):
     def __init__(self, val, width: int):
-        self.val = val if isinstance(val, str) else str(val)
+        super().__init__(val)
         self.width = width
+        self.lit = f'{self.lit}bv{str(self.width)}'
     def __to__vlog__(self, prefix=""):
         return VBVConst(self.val, self.width)
 
