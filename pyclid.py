@@ -564,7 +564,7 @@ class UclidRecordSelect(UclidExpr):
         self.recvar = recvar
         self.elemname = elemname
     def __inject__(self):
-        return "{}.{}".format(self.recvar.__inject__(), self.elemname)
+        return "{}.{}".format(self.recvar.__inject__(), self.elemname.__inject__())
 
 class UclidForall(UclidExpr):
     def __init__(self, variable, typ, expr : UclidExpr):
@@ -792,7 +792,7 @@ class UclidInstanceVarAccess(UclidExpr):
         self.instance = instance.__inject__() if isinstance(instance, UclidModule) else instance
         self.var = var
     def __inject__(self):
-        return "{}.{}".format(self.instance, self.var.__inject__())
+        return "{}.{}".format(self.instance.__inject__(), self.var.__inject__())
 
 class UclidImport(UclidElement):
     """
