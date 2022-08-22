@@ -225,7 +225,7 @@ class UclidModule(UclidElement):
         # dependencies = [inst.obj.module.name for inst in UclidContext.instance_decls[self.name].values()]
         # acc = "\n\n".join([UclidContext.modules[dep].__inject__() for dep in dependencies])
         acc = ""
-        init_code = textwrap.indent("init {\n" + textwrap.indent(self.init.__inject__(), "\t") + "\n}" if self.init is not None else "", "\t")
+        init_code = textwrap.indent(self.init.__inject__() if self.init is not None else "", "\t")
         next_code = textwrap.indent(self.nextb.__inject__() if self.nextb is not None else "", "\t")
         control_code = textwrap.indent(self.control.__inject__() if self.control is not None else "", "\t")
         decls_code = textwrap.dedent("""
