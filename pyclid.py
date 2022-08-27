@@ -538,6 +538,15 @@ class UclidArraySelect(UclidExpr):
     def __to__vlog__(self, prefix=""):
         return VArraySelect(prefix+self.iname, [arg.__to__vlog__(prefix) for arg in self.indexseq])
 
+class UclidArrayUpdate(UclidExpr):
+    def __init__(self, array, index, value):
+        super().__init__()
+        self.iname = array if isinstance(array, str) else array.__inject__()
+        self.index = index if isinstance(index, UclidExpr) else UclidLiteral(str(index))
+        self.value = value if isinstance(value, UclidExpr) else UclidLiteral(str(value))
+    def __inject__(self):
+        return "{}[{} -> {}]".format(self.iname, self.index.__inject__(), self.value.__inject__())
+
 class UclidBVExtract(UclidExpr):
     def __init__(self, bv: UclidExpr, high, low):
         super().__init__()
