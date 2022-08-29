@@ -875,9 +875,9 @@ class UclidVar(UclidLiteral):
         return super().__add__(other)
     def __to__vlog__(self, prefix=""):
         if isinstance(self.typ, UclidBVType):
-            return VReg(prefix+self.name, self.typ.width, 1)
+            return VLiteral(prefix+self.name)
         elif isinstance(self.typ, UclidBooleanType):
-            return VReg(prefix+self.name, 1, 1)
+            return VLiteral(prefix+self.name)
         elif isinstance(self.typ, UclidArrayType):
             if isinstance(self.typ.elemtype, UclidBVType) and isinstance(self.typ.indextype, UclidBVType):
                 return VReg(prefix+self.name, self.typ.elemtype.width, pow(2, self.typ.indextype.width))
