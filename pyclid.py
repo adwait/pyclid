@@ -225,8 +225,8 @@ class UclidModule(UclidElement):
         # dependencies = [inst.obj.module.name for inst in UclidContext.instance_decls[self.name].values()]
         # acc = "\n\n".join([UclidContext.modules[dep].__inject__() for dep in dependencies])
         acc = ""
-        init_code = textwrap.indent(self.init.__inject__() if self.init is not None else "init {}", "\t")
-        next_code = textwrap.indent(self.nextb.__inject__() if self.nextb is not None else "next {}", "\t")
+        init_code = textwrap.indent(self.init.__inject__() if self.init is not None else "", "\t")
+        next_code = textwrap.indent(self.nextb.__inject__() if self.nextb is not None else "", "\t")
         control_code = textwrap.indent(self.control.__inject__() if self.control is not None else "", "\t")
         decls_code = textwrap.dedent("""
             \t// Imports
@@ -537,6 +537,15 @@ class UclidArraySelect(UclidExpr):
         return "{}[{}]".format(self.iname, "][".join([ind.__inject__() for ind in self.indexseq]))
     def __to__vlog__(self, prefix=""):
         return VArraySelect(prefix+self.iname, [arg.__to__vlog__(prefix) for arg in self.indexseq])
+
+class UclidArrayUpdate(UclidExpr):
+    def __init__(self, array, index, value):
+        super().__init__()
+        self.iname = array if isinstance(array, str) else array.__inject__()
+        self.index = index if isinstance(index, UclidExpr) else UclidLiteral(str(index))
+        self.value = value if isinstance(value, UclidExpr) else UclidLiteral(str(value))
+    def __inject__(self):
+        return "{}[{} -> {}]".format(self.iname, self.index.__inject__(), self.value.__inject__())
 
 class UclidBVExtract(UclidExpr):
     def __init__(self, bv: UclidExpr, high, low):
@@ -855,8 +864,9 @@ class UclidBooleanConst(UclidLiteral):
         super().__init__(str(val).lower())
 class UclidBVConst(UclidLiteral):
     def __init__(self, val, width: int):
-        self.val = val if isinstance(val, str) else str(val)
+        super().__init__(val)
         self.width = width
+        self.lit = f'{self.lit}bv{str(self.width)}'
     def __to__vlog__(self, prefix=""):
         return VBVConst(self.val, self.width)
 
