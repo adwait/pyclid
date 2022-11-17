@@ -702,7 +702,7 @@ class UclidEnumType(UclidType):
             # logging.error("Enum type must be a named type in UclidEnumType!")
 
 class UclidRecordType(UclidType):
-    def __init__(self, members: tuple[str, UclidType], name=""):
+    def __init__(self, members, name=""):
         super().__init__(name)
         self.members = members
         fields = list(map(lambda m: m[0] + ": " + m[1], self.members))
