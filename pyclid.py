@@ -693,17 +693,44 @@ class UclidEnumType(UclidType):
     def __init__(self, members, name=""):
         super().__init__(name)
         self.members = members
+        self.declstring = "enum {{ {} }}".format(", ".join(self.members))
         if name != "":
             self.name = name
-            self.declstring = "enum {{ {} }}".format(", ".join(self.members))
             self.decl = UclidTypeDecl(self)
         else:
-            logging.error("Enum type must be a named type in UclidEnumType!")
+            self.name = self.declstring
+            # logging.error("Enum type must be a named type in UclidEnumType!")
+
+class UclidRecordType(UclidType):
+    def __init__(self, members: tuple[str, UclidType], name=""):
+        super().__init__(name)
+        self.members = members
+        fields = list(map(lambda m: m[0] + ": " + m[1], self.members))
+        self.declstring = "record {{ {} }}".format(", ".join(fields))
+        if name != "":
+            self.name = name
+            self.decl = UclidTypeDecl(self)
+        else:
+            self.name = self.declstring
+            # logging.error("Record type must be a named type in UclidRecordType!")
 
 class UclidLiteralType(UclidType):
     def __init__(self, name):
         super().__init__(name)
         self.declstring = name
+        self.decl = UclidTypeDecl(self)
+
+class UclidNamedType(UclidType):
+    def __init__(self, name):
+        super().__init__(name)
+        self.name = name
+        self.declstring = name
+
+class UclidUninterpretedType(UclidType):
+    def __init__(self, name):
+        super().__init__(name)
+        self.declstring = name
+        self.decl = UclidTypeDecl(self)
 
 class UclidFunctionType(UclidType):
     """
