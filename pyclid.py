@@ -1029,7 +1029,8 @@ class UclidBlock(UclidStmt):
         self.stmts = stmts
         self.indent = indent
     def __inject__(self):
-        return ("\n" + self.indent*"\t").join([stmt.__inject__() for stmt in self.stmts])
+        inner = ("\n" + self.indent*"\t").join([stmt.__inject__() for stmt in self.stmts])
+        return "{\n" + textwrap.indent(inner, '\t') + "\n}\n"
     def __to__vlog__(self, prefix=""):
         return VStmtSeq([s.__to__vlog__(prefix) for s in self.stmts])
 
@@ -1059,12 +1060,10 @@ class UclidITE(UclidStmt):
 
     def __inject__(self):
         if self.estmt == None:
-            return '''
-    if ({}) {{ {} }}
+            return '''if ({})\n{}\n
         '''.format(self.condition.__inject__(), self.tstmt.__inject__())
         else:
-            return '''
-    if ({}) {{ {} }} else {{ {} }}
+            return '''if ({})\n{}else\n{}
         '''.format(self.condition.__inject__(), self.tstmt.__inject__(), self.estmt.__inject__())
     def __to__vlog__(self, prefix=""):
         return VITE(
@@ -1110,10 +1109,8 @@ class UclidProcedure(UclidElement):
 
     def __inject__(self):
         return """procedure {} {}
-{{
 {} 
-}}
-    """.format(self.name, self.typ.__inject__(), textwrap.indent(self.body.__inject__(), '\t'))
+    """.format(self.name, self.typ.__inject__(), self.body.__inject__())
 
 class UclidProcedureCall(UclidStmt):
     def __init__(self, proc, ip_args, ret_vals):
