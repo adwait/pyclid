@@ -1,2 +1,2 @@
-from .pyclid import *
-from .veriloggen import *
+# from .pyclid import *
+# from .veriloggen import *

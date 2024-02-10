@@ -1,5 +1,5 @@
 import textwrap
-from .veriloggen import *
+# from .veriloggen import *
 
 from typing import Any, List, Dict
 
@@ -13,6 +13,7 @@ class UclidContext():
     modules             = {}
     # name of module in current context
     curr_module_name    = "main"
+    curr_module         = None
 
     @staticmethod
     def clearAll():
@@ -20,7 +21,8 @@ class UclidContext():
             Deletes all context information (restart).
         """
         UclidContext.curr_module_name   = "main"
-        UclidContext.modules            = { "main" : UclidModule("main") }
+        UclidContext.curr_module = UclidModule("main")
+        UclidContext.modules = { "main" : UclidModule("main") }
 
     @staticmethod
     def setContext(module_name):
@@ -46,6 +48,20 @@ class UclidElement():
     def __inject__(self):
         raise NotImplementedError
 
+class PortType(Enum):
+    var     = 0
+    input   = 1
+    output  = 2
+
+    # def __inject__(self):
+    #     if self.value == PortType.var:
+    #         return "var"
+    #     elif self.value == PortType.input:
+    #         return "input"
+    #     elif self.value == PortType.output:
+    #         return "output"
+    #     else:
+    #         logging.error("Unsupported port type")
 
 class UclidModule(UclidElement):
 
@@ -83,43 +99,82 @@ class UclidModule(UclidElement):
 
         UclidContext.modules[self.name] = self
 
-    def mkType(self, name, decl):
+    def setInit(self, init):
+        self.init = init
+
+    def mkUninterpretedType(self, name):
         if name in self.type_decls:
             logging.warn("Redeclaration of type named {} in module {}".format(name, self.name))
         else:
+            t = UclidUnintType(name)
+            decl = UclidTypeDecl(name)
             self.type_decls[name] = decl
+            return t
+    def mkArrayType(self, *args):
+        if len(args) == 2:
+            itype, etype = args
+            return UclidArrayType(itype, etype)
+        elif len(args) == 3:
+            name, itype, etype = args
+            if name in self.type_decls:
+                logging.warn("Redeclaration of type named {} in module {}".format(name, self.name))
+            else:
+                t = UclidArrayType(itype, etype)
+                s = UclidSynonymType(name)
+                decl = UclidTypeDecl(name, t)
+                self.type_decls[name] = decl
+                return s
+        else:
+            logging.error("Unsupported number of arguments for array type declaration")
+    def mkEnumType(self, name, members):
+        if name in self.type_decls:
+            logging.warn("Redeclaration of type named {} in module {}".format(name, self.name))
+        else:
+            t = UclidEnumType(members)
+            s = UclidSynonymType(name)
+            decl = UclidTypeDecl(name, t)
+            self.type_decls[name] = decl
+            return s
 
-    def mkVar(self, name, decl):
+    def mkVar(self, name, typ, porttype=PortType.var):
         if name in self.var_decls or name in self.op_var_decls or name in self.ip_var_decls:
             logging.warn("Redeclaration of name {} in module {}".format(name, self.name))
         else:
-            if decl.porttype == PortType.input:
+            v = UclidVar(name, typ)
+            decl = UclidVarDecl(name, typ, porttype)
+            if porttype == PortType.input:
                 self.ip_var_decls[name] = decl
-            elif decl.porttype == PortType.output:
+            elif porttype == PortType.output:
                 self.op_var_decls[name] = decl
             else:
                 self.var_decls[name] = decl
+            return v
+    def mkIntegerVar(self, name, porttype=PortType.var):
+        self.mkVar(name, UclidIntegerType(), porttype)
 
-    def mkConst(self, name, decl):
+    def mkConst(self, name, typ, value=None):
         if name in self.const_decls:
             logging.warn("Redeclaration of const {} in module {}".format(name, self.name))
         else:
-            self.const_decls[name] = decl
+            c = UclidConst(name)
+            d = UclidConstDecl(name, typ, value)
+            self.const_decls[name] = d
+            return c
 
     def mkInstance(self, name, decl):
         if name in self.instance_decls:
             logging.warn("Redeclaration of instance {}".format(name))
         else:
             self.instance_decls[name] = decl
-
+    
     def mkImport(self, decl):
         self.import_decls.append(decl)
 
-    def mkDefine(self, decl):
-        self.define_decls.append(decl)
+    def addDefine(self, define_decl):
+        self.define_decls.append(define_decl)
 
-    def mkProcedure(self, defn):
-        self.procedure_defns.append(defn)
+    def addProcedure(self, procedure_decl):
+        self.procedure_defns.append(procedure_decl)
 
     def mkAssume(self, assm):
         self.module_assumes.append(assm)
@@ -220,7 +275,79 @@ class UclidModule(UclidElement):
             """).format(self.name, decls_code, init_code, next_code, control_code)
         return acc
 
+# ==============================================================================
+# Uclid Declarations
+# ==============================================================================
+class DeclTypes(Enum):
+    VAR = 0
+    FUNCTION = 1
+    TYPE = 2
+    INSTANCE = 3
+    SYNTHFUN = 4
+    DEFINE = 5
+    CONST = 6
 
+# Base class for (all sorts of) uclid declarations
+class UclidDecl(UclidElement):
+    def __init__(self, decltype) -> None:
+        super().__init__()
+    # Declarations should additionally support the __decl__ function
+        self.decltype = decltype
+    def __inject__(self):
+        if self.decltype == DeclTypes.VAR:
+            return "{} {} : {};".format(self.porttype.name, self.name, self.__declstring__)
+        elif self.decltype == DeclTypes.TYPE:
+            if self.__declstring__ == "":
+                return "type {};".format(self.name)
+            return "type {} = {};".format(self.name, self.__declstring__)
+        elif self.decltype == DeclTypes.INSTANCE:
+            return "instance {} : {};".format(self.name, self.__declstring__)
+        elif self.decltype == DeclTypes.CONST:
+            return "const {} : {};".format(self.name, self.__declstring__)
+        # TODO: add support for other types
+        # TODO: add full type system
+        else:
+            logging.error(f"Declaration for decltype {self.decltype} is not permitted")
+            exit(1)
+    # Inject is declaration specific an needs to be overloaded
+    @property
+    def __declstring__(self):
+        raise NotImplementedError
+
+class UclidTypeDecl(UclidDecl):
+    def __init__(self, name: str, typexp=None) -> None:
+        super().__init__(DeclTypes.TYPE)
+        self.name = name
+        self.typexp = typexp
+    @property
+    def __declstring__(self):
+        return "" if self.typexp is None else self.typexp.__inject__()
+
+class UclidVarDecl(UclidDecl):
+    def __init__(self, name, typ, porttype=PortType.var):
+        super().__init__(DeclTypes.VAR)
+        self.name = name
+        self.typ = typ
+        self.porttype = porttype
+    @property
+    def __declstring__(self):
+        return self.typ.__inject__()
+
+class UclidConstDecl(UclidDecl):
+    def __init__(self, name, typ, val = None):
+        super().__init__(DeclTypes.CONST)
+        self.name = name
+        self.typ = typ
+        self.val = val
+    @property
+    def __declstring__(self):
+        if self.val is None:
+            return self.typ.__inject__()
+        return f"{self.typ.__inject__()} = {self.val.__inject__()}"
+
+# ==============================================================================
+# Uclid Init
+# ==============================================================================
 class UclidInit(UclidElement):
     def __init__(self, block) -> None:
         super().__init__()
@@ -242,6 +369,9 @@ class UclidInit(UclidElement):
             }}""").format(textwrap.indent(self.block.__inject__().strip(), '\t'))
 
 
+# ==============================================================================
+# Uclid Next
+# ==============================================================================
 class UclidNext(UclidElement):
     def __init__(self, block) -> None:
         super().__init__()
@@ -300,8 +430,6 @@ class Operators:
         self.op = op_
     def __inject__(self):
         return Operators.OpMapping[self.op][0]
-    def __to__vlog__(self):
-        return OpMapping[self.op][0]
 
 # Base class for Uclid expressions
 class UclidExpr(UclidElement):
@@ -355,8 +483,6 @@ class UclidOpExpr(UclidExpr):
             return (" "+oprep[0]+" ").join(children_code)
         else:
             logging.error("Operator arity not yet supported")
-    def __to__vlog__(self, prefix=""):
-        return VOpExpr(self.op, [child.__to__vlog__(prefix) for child in self.children])
 
 def Uadd(args):
     return UclidOpExpr("add", args)
@@ -420,8 +546,8 @@ class UclidBVSignExtend(UclidExpr):
         self.ewidth = ewidth
     def __inject__(self):
         return "bv_sign_extend({}, {})".format(self.ewidth, self.var.__inject__())
-    def __to__vlog__(self, prefix=""):
-        return VSignExtend(self.var.__to__vlog__(prefix), self.ewidth)
+    # def __to__vlog__(self, prefix=""):
+    #     return VSignExtend(self.var.__to__vlog__(prefix), self.ewidth)
 
 class UclidFunctionApply(UclidExpr):
     def __init__(self, func, arglist):
@@ -430,8 +556,6 @@ class UclidFunctionApply(UclidExpr):
         self.arglist = arglist
     def __inject__(self):
         return "{}({})".format(self.iname, ', '.join([arg.__inject__() for arg in self.arglist]))
-    def __to__vlog__(self, prefix=""):
-        return VFuncApplication(self.iname, [arg.__to__vlog__(prefix) for arg in self.arglist])
 
 class UclidArraySelect(UclidExpr):
     def __init__(self, array, indexseq):
@@ -440,8 +564,6 @@ class UclidArraySelect(UclidExpr):
         self.indexseq = [ind if isinstance(ind, UclidExpr) else UclidLiteral(str(ind)) for ind in indexseq]
     def __inject__(self):
         return "{}[{}]".format(self.iname, "][".join([ind.__inject__() for ind in self.indexseq]))
-    def __to__vlog__(self, prefix=""):
-        return VArraySelect(prefix+self.iname, [arg.__to__vlog__(prefix) for arg in self.indexseq])
 
 class UclidArrayUpdate(UclidExpr):
     def __init__(self, array, index, value):
@@ -460,8 +582,6 @@ class UclidBVExtract(UclidExpr):
         self.low = low
     def __inject__(self):
         return "({})[{}:{}]".format(self.bv.__inject__(), self.high, self.low)
-    def __to__vlog__(self, prefix=""):
-        return VSlice(self.bv.__to__vlog__(prefix), self.high, self.low)
 
 class UclidRecordSelect(UclidExpr):
     def __init__(self, recvar: UclidExpr, elemname: str):
@@ -489,59 +609,9 @@ class UclidForall(UclidExpr):
     def __inject__(self):
         return "forall ({} : {}) :: ({})".format(self.variable, self.typ.__inject__(), self.expr.__inject__())
 
-class DeclTypes(Enum):
-    VAR = 0
-    FUNCTION = 1
-    TYPE = 2
-    INSTANCE = 3
-    SYNTHFUN = 4
-    DEFINE = 5
-    CONST = 6
-
-    # def __inject__(self):
-    #     if self.value == 0:
-    #         return "var"
-    #     elif self.value == 1:
-    #         return "function"
-    #     elif self.value == 2:
-    #         return "type"
-    #     elif self.value == 3:
-    #         return "instance"
-    #     elif self.value == 4:
-    #         return "synthesis function"
-    #     elif self.value == 5:
-    #         return "define"
-    #     elif self.value == 6:
-    #         return "const"
-    #     else:
-    #         logging.error("Unsupported decl type {}".format(self.name))
-    #         return ""
-
-# Base class for (all sorts of) uclid declarations
-class UclidDecl(UclidElement):
-    def __init__(self, decltype) -> None:
-        super().__init__()
-    # Declarations should additionally support the __decl__ function
-        self.decltype = decltype
-    def __inject__(self):
-        if self.decltype == DeclTypes.VAR:
-            return "{} {} : {};".format(self.porttype.name, self.name, self.__declstring__)
-        elif self.decltype == DeclTypes.TYPE:
-            return "type {} = {};".format(self.name, self.__declstring__)
-        elif self.decltype == DeclTypes.INSTANCE:
-            return "instance {} : {};".format(self.name, self.__declstring__)
-        elif self.decltype == DeclTypes.CONST:
-            return "const {} : {};".format(self.name, self.__declstring__)
-        # TODO: add support for other types
-        # TODO: add full type system
-        else:
-            logging.error(f"Declaration for decltype {self.decltype} is not permitted")
-            exit(1)
-    # Inject is declaration specific an needs to be overloaded
-    @property
-    def __declstring__(self):
-        raise NotImplementedError
-
+# ==============================================================================
+# Uclid Types
+# ==============================================================================
 class UclidType(UclidElement):
     def __init__(self, typestring):
         self.typestring = typestring
@@ -551,48 +621,35 @@ class UclidType(UclidElement):
 class UclidBooleanType(UclidType):
     def __init__(self):
         super().__init__("boolean")
-UBool = UclidBooleanType
-
 class UclidIntegerType(UclidType):
     def __init__(self):
         super().__init__("integer")
-UInt = UclidIntegerType
-
 class UclidBVType(UclidType):
     def __init__(self, width):
         super().__init__("bv{}".format(width))
         self.width = width
-UBV = UclidBVType
-
 class UclidArrayType(UclidType):
     def __init__(self, itype, etype):
         super().__init__("[{}]{}".format(itype.__inject__(), etype.__inject__()))
         self.indextype = itype
         self.elemtype = etype
-
 class UclidEnumType(UclidType):
     def __init__(self, members):
         super().__init__("enum {{ {} }}".format(", ".join(members)))
         self.members = members
-
 class UclidSynonymType(UclidType):
     def __init__(self, name):
         super().__init__(name)
         self.name = name
-
 class UclidUnintType(UclidType):
     def __init__(self, name):
         super().__init__(name)
         self.name = name
 
-class UclidTypeDecl(UclidDecl):
-    def __init__(self, name: str, typexp) -> None:
-        super().__init__(DeclTypes.TYPE)
-        self.name = name
-        self.typexp = typexp
-    def __declstring__(self):
-        return self.typexp.__inject__()
 
+# ==============================================================================
+# Uclid Function Declarations
+# ==============================================================================
 class UclidFunctionSig(UclidElement):
     def __init__(self, ip_args, out_type) -> None:
         super().__init__()
@@ -601,8 +658,6 @@ class UclidFunctionSig(UclidElement):
     def __inject__(self):
         input_sig = ', '.join(["{} : {}".format(i[0], i[1].__inject__()) for i in self.ip_args])
         return "({}) : {}".format(input_sig, self.out_type.__inject__())
-
-
 class UclidDefine(UclidElement):
     """
     Define (function) declarations
@@ -612,7 +667,6 @@ class UclidDefine(UclidElement):
         self.name = name
         self.function_sig = function_sig
         self.body = body
-        UclidContext.__add_definedecl__(self)
     def __inject__(self):
         return "\tdefine {}{} = {};".format(
             self.name, self.function_sig.__inject__(), self.body.__inject__())     
@@ -634,84 +688,32 @@ class UclidLiteral(UclidExpr):
         return self.lit
     def __add__(self, other):
         return super().__add__(other)
-    def __to__vlog__(self, prefix=""):
-        return VLiteral(str(self.lit))
 
-class UclidIntegerConst(UclidLiteral):
+class UclidIntegerLiteral(UclidLiteral):
     def __init__(self, val):
         super().__init__(val)
-class UclidBooleanConst(UclidLiteral):
+class UclidBooleanLiteral(UclidLiteral):
     def __init__(self, val : bool):
         super().__init__(str(val).lower())
-class UclidBVConst(UclidLiteral):
+class UclidBVLiteral(UclidLiteral):
     def __init__(self, val, width: int):
         super().__init__(val)
+        self.val = val
         self.width = width
-        self.lit = f'{self.lit}bv{str(self.width)}'
-    def __to__vlog__(self, prefix=""):
-        return VBVConst(self.val, self.width)
-
-# Uclid Const declaration
-class UclidConst(UclidLiteral):
-    def __init__(self, name: str, typ : UclidType, value=None):
-        super().__init__(name)
-        self.name = name
-        self.typ = typ
-        if value is None:
-            self.declstring = typ.name
-        else:
-            self.declstring = "{} = {}".format(typ.name, value.__inject__() if isinstance(value, UclidExpr) else str(value))
-        _ = UclidDecl(self, DeclTypes.CONST)
-    def __inject__(self):
-        return self.name
+        self.lit = f'{self.val}bv{str(self.width)}'
 
 # ==============================================================================
 # Uclid Variables
 # ==============================================================================
-class PortType(Enum):
-    var = 0
-    input = 1
-    output = 2
-
-    def __inject__(self):
-        if self.value == PortType.var:
-            return "var"
-        elif self.value == PortType.input:
-            return "input"
-        elif self.value == PortType.output:
-            return "output"
-        else:
-            logging.error("Unsupported port type")
-
-# Uclid Var declaration
 class UclidVar(UclidLiteral):
-    def __init__(self, name, typ : UclidType, porttype=PortType.var):
+    def __init__(self, name, typ):
         super().__init__(name)
         self.name = name
         self.typ = typ
-        self.porttype = porttype
-        self.declstring = typ.name
-        _ = UclidDecl(self, DeclTypes.VAR)
     def __inject__(self):
         return self.name
     def __add__(self, other):
         return super().__add__(other)
-    def __to__vlog__(self, prefix=""):
-        if isinstance(self.typ, UclidBVType):
-            return VLiteral(prefix+self.name)
-        elif isinstance(self.typ, UclidBooleanType):
-            return VLiteral(prefix+self.name)
-        elif isinstance(self.typ, UclidArrayType):
-            if isinstance(self.typ.elemtype, UclidBVType) and isinstance(self.typ.indextype, UclidBVType):
-                return VReg(prefix+self.name, self.typ.elemtype.width, pow(2, self.typ.indextype.width))
-            else:
-                logging.error("Verilog generation for non-compatible type: {}".format(self.typ.declstring))
-        else:
-            logging.error("Verilog generation for non-compatible type: {}".format(self.typ.declstring))
-def mkVar(varname : list, typ, porttype):
-    return UclidVar(varname, typ, porttype)
-def mkVars(varnames : list, typ, porttype):
-    return [UclidVar(varname, typ, porttype) for varname in varnames]
 
 # Uclid integer type declaration
 class UclidIntegerVar(UclidVar):
@@ -719,10 +721,6 @@ class UclidIntegerVar(UclidVar):
         super().__init__(name, UclidIntegerType(), porttype)
     def __add__(self, other):
         return super().__add__(other)
-def mkIntVar(varname : str, porttype=PortType.var):
-    return UclidIntegerVar(varname, porttype)
-def mkIntVars(varnames : list, porttype=PortType.var):
-    return [UclidIntegerVar(varname, porttype) for varname in varnames]
 # Uclid bitvector type declaration
 class UclidBVVar(UclidVar):
     def __init__(self, name, width, porttype=PortType.var) -> None:
@@ -738,6 +736,13 @@ class UclidBooleanVar(UclidVar):
         logging.error("Addition not supported on Boolean type")
         # return super().__add__(other)
 
+# Uclid Const declaration
+class UclidConst(UclidLiteral):
+    def __init__(self, name: str):
+        super().__init__(name)
+        self.name = name
+    def __inject__(self):
+        return self.name
 # ==============================================================================
 # Uclid statements
 # ==============================================================================
@@ -790,8 +795,6 @@ class UclidAssignStmt(UclidStmt):
             ))
     def __inject__(self):
         return "{} = {};".format(self.lval.__inject__(), self.rval.__inject__())
-    def __to__vlog__(self, prefix=""):
-        return VBAssignment(self.lval.__to__vlog__(prefix), self.rval.__to__vlog__(prefix))
 
 class UclidBlockStmt(UclidStmt):
     def __init__(self, stmts = [], indent=0) -> None:
@@ -800,8 +803,6 @@ class UclidBlockStmt(UclidStmt):
         self.indent = indent
     def __inject__(self):
         return ("\n" + self.indent*"\t").join([stmt.__inject__() for stmt in self.stmts])
-    def __to__vlog__(self, prefix=""):
-        return VStmtSeq([s.__to__vlog__(prefix) for s in self.stmts])
 
 class UclidCaseStmt(UclidStmt):
     def __init__(self, conditionlist, stmts):
@@ -836,12 +837,6 @@ class UclidITEStmt(UclidStmt):
             return '''
     if ({}) {{ {} }} else {{ {} }}
         '''.format(self.condition.__inject__(), self.tstmt.__inject__(), self.estmt.__inject__())
-    def __to__vlog__(self, prefix=""):
-        return VITE(
-            self.condition.__to__vlog__(prefix),
-            self.tstmt.__to__vlog__(prefix),
-            self.estmt.__to__vlog__(prefix),
-        )
 
 class UclidITENestedStmt(UclidStmt):
     def __init__(self, conditionlist, stmtlist):
@@ -1007,7 +1002,6 @@ class UclidProcedureSig(UclidElement):
         self.return_vars = return_vars
         self.requires = requires
         self.ensures = ensures
-
     def __inject__(self):
         input_str = ', '.join(["{} : {}".format(i[0] if isinstance(i[0], str) else i[0].lit,  i[1].__inject__()) for i in self.ip_args])
         modify_str = "\nmodifies {};".format(
