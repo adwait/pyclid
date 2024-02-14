@@ -18,7 +18,7 @@ def mkUclidBoolVars(varnames : list, porttype=PortType.var):
 def mkUclidBVVar(varname : str, width : int, porttype=PortType.var):
     return UclidContext.curr_module.mkBVVar(varname, width, porttype)
     
-
+# Expression sugaring
 def Uadd(args):
     return UclidOpExpr("add", args)
 def Usub(args):
@@ -77,6 +77,7 @@ def Uconcat(args):
 
 UBool = UclidBooleanType()
 UInt = UclidIntegerType()
+
 
 CMD_check = UclidCheckCommand()
 CMD_print = UclidPrintResultsCommand()
